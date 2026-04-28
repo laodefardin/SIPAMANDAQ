@@ -1,0 +1,64 @@
+<style>
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Animations */
+.btn-animate { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.btn-animate:active { transform: scale(0.95); }
+
+tbody tr { transition: all 0.2s ease; }
+tbody tr:hover { background-color: #f8fafc; transform: translateY(-1px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); position: relative; z-index: 10; }
+
+.nav-item { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* Page Enter Animation */
+main { animation: pageEnter 0.15s ease-out both; }
+@keyframes pageEnter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Responsive Sidebar */
+@media (max-width: 768px) {
+    #sidebar {
+        position: fixed !important; left: 0; top: 0; bottom: 0;
+        z-index: 50 !important;
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: none;
+    }
+    #sidebar.sidebar-open {
+        transform: translateX(0);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+}
+
+#sidebar-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0); z-index: 45;
+    pointer-events: none; transition: background 0.3s ease;
+}
+#sidebar-backdrop.active {
+    background: rgba(0,0,0,0.5); pointer-events: all;
+}
+
+#mobile-topbar { display: none; }
+@media (max-width: 768px) { #mobile-topbar { display: flex; } }
+
+/* Smooth Modal Animations */
+.modal-container { opacity: 0; transition: opacity 0.25s ease; }
+.modal-container.show { opacity: 1; }
+.modal-panel { transform: scale(0.95) translateY(10px); opacity: 0; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease; }
+.modal-container.show .modal-panel { transform: scale(1) translateY(0); opacity: 1; }
+.modal-container.closing { opacity: 0; transition: opacity 0.2s ease; }
+.modal-container.closing .modal-panel { transform: scale(0.95) translateY(10px); opacity: 0; transition: transform 0.2s ease, opacity 0.15s ease; }
+
+/* Content Fade for page switching */
+.content-fade-in { animation: contentFade 0.15s ease-out forwards; }
+@keyframes contentFade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Toast Notification */
+.toast { animation: toastIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+.toast.hide { animation: toastOut 0.3s ease forwards; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes toastOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-20px); } }
+</style>

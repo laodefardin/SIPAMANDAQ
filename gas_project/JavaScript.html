@@ -1,0 +1,1329 @@
+<script>
+/**
+ * ============================================================
+ * JavaScript.html — Client-side Logic SIPAMANDAQ (v2 - Cached)
+ * ============================================================
+ * Semua data dimuat 1x saat init, lalu di-cache client-side.
+ * Perpindahan menu = render dari cache (instan).
+ * Loading hanya di tombol aksi, bukan overlay fullscreen.
+ */
+
+// === State Global ===
+var APP = {
+  token: null,
+  user: null,
+  currentPage: 'dashboard',
+  currentSheet: '',
+  cache: null // Semua data di-cache di sini
+};
+
+// === Inisialisasi ===
+function initApp() {
+  // Baca session dari server template (di-embed di App.html)
+  if (typeof SERVER_SESSION === 'undefined' || !SERVER_SESSION) {
+    handleSessionExpired();
+    return;
+  }
+  
+  APP.token = SERVER_SESSION._token;
+  APP.user = {
+    id: SERVER_SESSION.id,
+    nama: SERVER_SESSION.nama,
+    username: SERVER_SESSION.username,
+    role: SERVER_SESSION.role,
+    hak_akses: SERVER_SESSION.hak_akses
+  };
+  
+  if (!APP.token || !APP.user.id) {
+    handleSessionExpired();
+    return;
+  }
+  
+  setupUserInfo();
+  fetchAllData();
+}
+
+// === Session Management ===
+function handleSessionExpired() {
+  google.script.run.clearServerSession();
+  google.script.run
+    .withSuccessHandler(function(url) { window.top.location.href = url; })
+    .withFailureHandler(function() { window.top.location.reload(); })
+    .getWebAppUrl();
+}
+
+function handleLogout() {
+  var btn = document.querySelector('[onclick="handleLogout()"]');
+  if (btn) { btn.innerHTML = '<div class="w-4 h-4 border-2 border-red-300 border-t-red-600 rounded-full animate-spin mr-2"></div> Keluar...'; btn.disabled = true; }
+  
+  google.script.run
+    .withSuccessHandler(function() {
+      google.script.run
+        .withSuccessHandler(function() {
+          google.script.run
+            .withSuccessHandler(function(url) { window.top.location.href = url; })
+            .withFailureHandler(function() { window.top.location.reload(); })
+            .getWebAppUrl();
+        })
+        .clearServerSession();
+    })
+    .logout(APP.token);
+}
+
+// === Fetch ALL Data (1x panggilan server) ===
+function fetchAllData(callback) {
+  // Tampilkan skeleton saat pertama kali load
+  document.getElementById('main-content').innerHTML = getSkeleton('dashboard');
+  
+  google.script.run
+    .withSuccessHandler(function(responseStr) {
+      var result;
+      try {
+        result = typeof responseStr === 'string' ? JSON.parse(responseStr) : responseStr;
+      } catch(e) {
+        showToast('Gagal memproses data.', 'error');
+        return;
+      }
+      
+      if (!result.success) {
+        if (result.message === 'SESSION_EXPIRED') return handleSessionExpired();
+        showToast(result.message, 'error');
+        return;
+      }
+      
+      // Simpan semua data ke cache
+      APP.cache = result;
+      
+      // Setup sidebar berdasarkan data yang diterima
+      setupSidebar();
+      
+      // Render halaman aktif
+      navigateTo(APP.currentPage, APP.currentSheet);
+      
+      if (callback) callback();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Gagal memuat data. Silakan refresh halaman.', 'error');
+    })
+    .getAllData(APP.token);
+}
+
+// === Refresh data setelah CRUD (re-fetch dari server) ===
+function refreshData(callback) {
+  google.script.run
+    .withSuccessHandler(function(responseStr) {
+      var result;
+      try {
+        result = typeof responseStr === 'string' ? JSON.parse(responseStr) : responseStr;
+      } catch(e) {
+        showToast('Gagal memproses data.', 'error');
+        if (callback) callback();
+        return;
+      }
+      
+      if (!result.success) {
+        if (result.message === 'SESSION_EXPIRED') return handleSessionExpired();
+        showToast(result.message, 'error');
+        return;
+      }
+      APP.cache = result;
+      if (callback) callback();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Gagal memuat ulang data.', 'error');
+      if (callback) callback();
+    })
+    .getAllData(APP.token);
+}
+
+// === Sidebar Setup ===
+function setupSidebar() {
+  if (!APP.cache) return;
+  var role = APP.user.role;
+  var access = ROLE_ACCESS_CLIENT[role];
+  
+  var allMenuItems = document.querySelectorAll('[data-menu]');
+  for (var i = 0; i < allMenuItems.length; i++) {
+    var menuSheet = allMenuItems[i].getAttribute('data-menu');
+    if (menuSheet === 'dashboard' || menuSheet === 'setting') continue;
+    if (access.menu.indexOf(menuSheet) === -1) {
+      allMenuItems[i].style.display = 'none';
+    }
+  }
+}
+
+function setupUserInfo() {
+  var els = document.querySelectorAll('.user-name');
+  for (var i = 0; i < els.length; i++) els[i].textContent = APP.user.nama;
+  
+  var roleLabels = { admin: 'Koordinator Prodi', dosen: 'Dosen Pengajar', tendik: 'Tenaga Kependidikan' };
+  var roleEls = document.querySelectorAll('.user-role');
+  for (var i = 0; i < roleEls.length; i++) roleEls[i].textContent = roleLabels[APP.user.role] || APP.user.role;
+  
+  var avatarEls = document.querySelectorAll('.user-avatar');
+  var initials = APP.user.nama.split(' ').map(function(w) { return w[0]; }).join('').substring(0, 2).toUpperCase();
+  for (var i = 0; i < avatarEls.length; i++) {
+    if(APP.user.foto_profil && APP.user.foto_profil !== '') {
+      avatarEls[i].innerHTML = '<img src="'+escapeHtml(APP.user.foto_profil)+'" class="w-full h-full object-cover rounded-xl"/>';
+      avatarEls[i].classList.replace('bg-primary-100', 'bg-transparent');
+      avatarEls[i].classList.remove('border-primary-200');
+    } else {
+      avatarEls[i].textContent = initials;
+    }
+  }
+}
+var updateUI = setupUserInfo;
+
+// === Role Access (Client-side mirror) ===
+var ROLE_ACCESS_CLIENT = {
+  admin: {
+    menu: ['Dokumen_Prodi', 'Dokumen_Dosen', 'Dokumen_Tendik', 'Dokumen_Mahasiswa'],
+    crud: ['Dokumen_Prodi', 'Dokumen_Dosen', 'Dokumen_Tendik', 'Dokumen_Mahasiswa'],
+    viewOnly: [], viewAll: true, userManagement: true
+  },
+  dosen: {
+    menu: ['Dokumen_Prodi', 'Dokumen_Dosen'],
+    crud: ['Dokumen_Dosen'],
+    viewOnly: ['Dokumen_Prodi'], viewAll: false, userManagement: false
+  },
+  tendik: {
+    menu: ['Dokumen_Prodi', 'Dokumen_Dosen', 'Dokumen_Tendik', 'Dokumen_Mahasiswa'],
+    crud: ['Dokumen_Prodi', 'Dokumen_Tendik', 'Dokumen_Mahasiswa'],
+    viewOnly: ['Dokumen_Dosen'], viewAll: false, userManagement: false
+  }
+};
+
+// === Navigation (INSTANT dari cache) ===
+function navigateTo(page, sheetName) {
+  APP.currentPage = page;
+  if (sheetName) APP.currentSheet = sheetName;
+  
+  // Update active sidebar
+  var navItems = document.querySelectorAll('[data-menu]');
+  for (var i = 0; i < navItems.length; i++) {
+    var item = navItems[i];
+    var isActive = item.getAttribute('data-menu') === (sheetName || page);
+    item.className = item.className.replace(/text-primary-700 bg-primary-50 font-bold/g, '').replace(/text-gray-600/g, '');
+    if (isActive) {
+      item.classList.add('text-primary-700', 'bg-primary-50', 'font-bold');
+    } else {
+      item.classList.add('text-gray-600');
+    }
+  }
+  
+  // Close mobile sidebar
+  if (window.innerWidth < 768) {
+    var sidebar = document.getElementById('sidebar');
+    var backdrop = document.getElementById('sidebar-backdrop');
+    if (sidebar) sidebar.classList.remove('sidebar-open');
+    if (backdrop) backdrop.classList.remove('active');
+  }
+  
+  // Render dari cache (INSTAN, tanpa server call)
+  if (!APP.cache) return; // Cache belum ready
+  
+  if (page === 'dashboard') {
+    renderDashboard(APP.cache);
+  } else if (page === 'dokumen') {
+    renderDocumentPage(sheetName, APP.cache.documents[sheetName]);
+  } else if (page === 'setting') {
+    loadSettingPage();
+  }
+}
+
+// === Dashboard (render dari cache) ===
+function renderDashboard(data) {
+  var sheetLabels = {
+    'Dokumen_Prodi': { label: 'Dokumen Prodi', icon: 'fa-building', color: 'blue', sheet: 'Dokumen_Prodi', bg: 'bg-blue-600', dot: 'bg-blue-500', bar: '70%', newStr: '+2 baru' },
+    'Dokumen_Dosen': { label: 'Dokumen Dosen', icon: 'fa-user-tie', color: 'emerald', sheet: 'Dokumen_Dosen', bg: 'bg-emerald-500', dot: 'bg-emerald-500', bar: '85%', newStr: '+5 baru' },
+    'Dokumen_Tendik': { label: 'Dokumen Tendik', icon: 'fa-users-gear', color: 'amber', sheet: 'Dokumen_Tendik', bg: 'bg-amber-500', dot: 'bg-amber-500', bar: '40%', newStr: '+1 baru' },
+    'Dokumen_Mahasiswa': { label: 'Dokumen Mahasiswa', icon: 'fa-graduation-cap', color: 'purple', sheet: 'Dokumen_Mahasiswa', bg: 'bg-purple-600', dot: 'bg-purple-500', bar: '90%', newStr: '+8 baru' }
+  };
+  
+  var html = '<div class="mb-4 text-left">';
+  html += '<h2 class="text-3xl font-display font-black text-gray-900 tracking-tight">Dashboard</h2>';
+  html += '<p class="text-xs font-bold text-gray-500 mt-1"><i class="fa-solid fa-circle-info mr-1 text-gray-400"></i> Pantau ringkasan statistik arsip dokumen seluruh unit.</p></div>';
+  
+  // Greeting Banner
+  html += '<div class="bg-gradient-to-r from-primary-600 to-indigo-600 rounded-2xl p-6 md:p-8 text-white mb-8 relative overflow-hidden shadow-xl shadow-primary-500/20">';
+  html += '<div class="absolute inset-0 bg-[url(\'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNykiLz48L3N2Zz4=\')]"></div>';
+  html += '<div class="absolute top-0 right-0 w-80 h-80 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div>';
+  html += '<div class="relative z-10"><p class="text-xs font-bold text-white/70 mb-1"><i class="fa-solid fa-handshake-angle mr-1.5"></i> Selamat Datang Kembali,</p>';
+  html += '<h3 class="text-2xl md:text-3xl font-display font-black mb-2">' + escapeHtml(data.userName) + '</h3>';
+  html += '<p class="text-xs text-white/80 max-w-xl font-medium leading-relaxed">' + escapeHtml(SERVER_SETTINGS.desc) + '</p>';
+  html += '</div></div>';
+  
+  // Stats Cards
+  html += '<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mb-6">';
+  var access = ROLE_ACCESS_CLIENT[APP.user.role];
+  
+  for (var key in sheetLabels) {
+    var info = sheetLabels[key];
+    var count = data.stats[key] || 0;
+    var hasAccess = access.menu.indexOf(key) !== -1;
+    if (!hasAccess) continue;
+    
+    // Kalkulasi persentase dinamis untuk garis progress bar
+    var pct = data.total > 0 ? Math.round((count / data.total) * 100) : 0;
+    var barWidth = (pct > 0 ? pct : 3) + '%'; // Minimal 3% agar garis warna bulat tetap terlihat
+    
+    // Kalkulasi dokumen "baru" (diupload dalam 7 hari terakhir)
+    var countBaru = 0;
+    var sheetData = data.documents && data.documents[key] ? data.documents[key].data : [];
+    if (sheetData && sheetData.length > 0) {
+      var limit = new Date();
+      limit.setDate(limit.getDate() - 7); // Batas 7 hari ke belakang
+      
+      for (var i = 0; i < sheetData.length; i++) {
+        var tStr = sheetData[i].tgl_upload;
+        if (typeof tStr === 'string' && tStr.length >= 10) {
+          var yyyy, mm, dd;
+          // Format DD-MM-YYYY (format standar aplikasi)
+          if (tStr[2] === '-' && tStr[5] === '-') {
+            var p = tStr.split('-');
+            dd = parseInt(p[0], 10);
+            mm = parseInt(p[1], 10) - 1;
+            yyyy = parseInt(p[2], 10);
+          } else { // Fallback format aman
+            var dFb = new Date(tStr);
+            dd = dFb.getDate();
+            mm = dFb.getMonth();
+            yyyy = dFb.getFullYear();
+          }
+          if (new Date(yyyy, mm, dd) >= limit) countBaru++;
+        }
+      }
+    }
+    
+    html += '<div onclick="navigateTo(\'dokumen\',\'' + info.sheet + '\')" class="group cursor-pointer bg-white rounded-xl border border-gray-200 p-5 hover:shadow-lg hover:border-gray-300 transition-all duration-300 flex flex-col justify-between h-full">';
+    
+    html += '<div class="flex justify-between items-start mb-6">';
+    html += '<div class="w-10 h-10 rounded-lg bg-' + info.color + '-50 text-' + info.color + '-600 flex items-center justify-center text-lg"><i class="fa-solid ' + info.icon + '"></i></div>';
+    
+    // Tampilkan label "+X baru" jika ada, jika tidak kosongkan saja
+    if (countBaru > 0) {
+      html += '<div class="px-2.5 py-1 bg-green-50 text-green-600 rounded-md text-[10px] font-black tracking-wide flex items-center"><i class="fa-solid fa-arrow-up mr-1"></i>+' + countBaru + ' baru</div>';
+    } else {
+      html += '<div></div>'; // Spacer kosong agar posisi icon tetap rata kiri/kanan
+    }
+    
+    html += '</div>';
+    
+    html += '<div>';
+    html += '<h3 class="text-3xl font-display font-black text-gray-900 mb-1 tracking-tight">' + count + '</h3>';
+    html += '<p class="text-xs font-bold text-gray-500 mb-4">' + info.label + '</p>';
+    html += '<div class="w-full bg-gray-100 rounded-full h-1.5" title="' + pct + '% dari total"><div class="' + info.bg + ' h-1.5 rounded-full transition-all duration-1000 ease-out" style="width: ' + barWidth + '"></div></div>';
+    html += '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+  
+  // Split Layout
+  html += '<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">';
+  
+  // Ringkasan Total
+  html += '<div class="bg-white rounded-xl border border-gray-200 p-6 md:p-8 flex flex-col">';
+  html += '<h4 class="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-8">Ringkasan Total</h4>';
+  html += '<div class="text-center mb-10"><p class="text-6xl font-display font-black text-gray-900 tracking-tighter">' + (data.total || 0) + '</p>';
+  html += '<p class="text-[11px] font-bold text-gray-500 mt-2">Total Seluruh Dokumen</p></div>';
+  
+  html += '<div class="space-y-4 mt-auto border-t border-gray-100 pt-6">';
+  for (var key in sheetLabels) {
+    if (access.menu.indexOf(key) === -1) continue;
+    var info = sheetLabels[key];
+    var c = data.stats[key] || 0;
+    var shortName = info.label.replace('Dokumen ', '');
+    
+    html += '<div class="flex justify-between items-center text-xs font-bold">';
+    html += '<div class="flex items-center text-gray-500"><div class="w-2 h-2 rounded-full ' + info.dot + ' mr-3"></div>' + shortName + '</div>';
+    html += '<div class="text-gray-900 bg-gray-50 px-2 py-1 rounded">' + c + ' file</div>';
+    html += '</div>';
+  }
+  html += '</div></div>';
+  
+  // Aktivitas Terakhir
+  html += '<div class="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-6 md:p-8 flex flex-col h-full">';
+  html += '<h4 class="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-4">Aktivitas Terakhir</h4>';
+  html += '<div class="overflow-y-auto flex-1 pr-1" style="max-height: 370px;">';
+  html += '<div class="space-y-1">';
+  
+  if (data.activities && data.activities.length > 0) {
+    var activityIcons = [
+      { icon: 'fa-cloud-arrow-up', bg: 'bg-green-100', text: 'text-green-600', act: 'diunggah' },
+      { icon: 'fa-pen-to-square', bg: 'bg-amber-100', text: 'text-amber-600', act: 'diperbarui' },
+      { icon: 'fa-trash-can', bg: 'bg-red-100', text: 'text-red-500', act: 'dihapus' }
+    ];
+    
+    for (var a = 0; a < data.activities.length; a++) {
+      var act = data.activities[a];
+      var style = activityIcons[0]; // Upload tracking
+      var timeInfo = act.tgl;
+      
+      html += '<div class="flex items-center gap-4 py-3.5 px-3 rounded-xl hover:bg-gray-50 transition-colors border-b border-gray-50 border-dashed last:border-0 group cursor-pointer">';
+      html += '<div class="w-10 h-10 rounded-full ' + style.bg + ' ' + style.text + ' flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform"><i class="fa-solid ' + style.icon + ' text-sm"></i></div>';
+      
+      html += '<div class="min-w-0 flex-1">';
+      html += '<p class="text-sm font-bold text-gray-900 truncate tracking-tight">' + escapeHtml(act.nama_dok) + ' ' + style.act + '</p>';
+      html += '<p class="text-[11px] text-gray-500 font-medium mt-0.5"><i class="fa-solid fa-user-pen mr-1 opacity-50"></i> Oleh: ' + escapeHtml(act.uploader) + ' &middot; ' + act.sheet.replace('_', ' ') + '</p>';
+      html += '</div>';
+      
+      html += '<div class="text-[11px] font-bold text-gray-400 whitespace-nowrap pl-2">' + timeInfo + '</div>';
+      html += '</div>';
+    }
+  } else {
+    html += '<div class="flex flex-col items-center justify-center h-full text-center py-10 opacity-60"><i class="fa-solid fa-clock-rotate-left text-4xl text-gray-200 mb-3"></i><p class="text-sm font-bold text-gray-400">Belum ada aktivitas terekam.</p></div>';
+  }
+  
+  html += '</div></div></div></div>';
+  
+  document.getElementById('main-content').innerHTML = html;
+}
+
+// === Documents Page (render dari cache) ===
+function renderDocumentPage(sheetName, result) {
+  if (!result) {
+    document.getElementById('main-content').innerHTML = '<div class="text-center py-12 text-gray-400"><i class="fa-solid fa-lock text-4xl mb-3 block"></i><p class="font-bold">Anda tidak memiliki akses ke halaman ini.</p></div>';
+    return;
+  }
+  
+  var labels = {
+    'Dokumen_Prodi': { title: 'Dokumen Prodi', desc: 'Kelola arsip resmi tingkat program studi.' },
+    'Dokumen_Dosen': { title: 'Dokumen Dosen', desc: 'Kelola arsip pengajaran dan legalitas tridarma dosen.' },
+    'Dokumen_Tendik': { title: 'Dokumen Tendik', desc: 'Kelola arsip tata usaha dan kepegawaian tendik.' },
+    'Dokumen_Mahasiswa': { title: 'Dokumen Mahasiswa', desc: 'Kelola pengadministrasian transkrip akademik.' }
+  };
+  var info = labels[sheetName] || { title: sheetName, desc: '' };
+  
+  var html = '<div class="flex flex-col md:flex-row md:items-end justify-between mb-6 md:mb-8 gap-4"><div>';
+  html += '<h2 class="text-3xl font-display font-black text-gray-900 tracking-tight">' + info.title + '</h2>';
+  html += '<p class="text-sm font-medium text-gray-500 mt-1.5"><i class="fa-solid fa-circle-info mr-1.5 text-gray-400"></i> ' + info.desc + '</p></div>';
+  
+  if (result.canCrud) {
+    html += '<button id="btn-upload-main" onclick="openUploadModal(\'' + sheetName + '\')" class="btn-animate inline-flex items-center justify-center px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-primary-600 hover:bg-primary-700 shadow-sm shadow-primary-500/30 transition-colors">';
+    html += '<i class="fa-solid fa-cloud-arrow-up mr-2"></i> Upload Arsip Baru</button>';
+  }
+  html += '</div>';
+  
+  // Tabel
+  html += '<div class="bg-white shadow-sm rounded-2xl border border-gray-200 overflow-hidden">';
+  
+  // Search Bar & Filter
+  html += '<div class="p-4 border-b border-gray-100 flex flex-col sm:flex-row justify-between gap-4 bg-gray-50/30">';
+  html += '<div class="relative w-full sm:max-w-md">';
+  html += '<i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>';
+  html += '<input type="text" id="searchInput" onkeyup="searchTable()" placeholder="Pencarian nama arsip dokumen..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-shadow placeholder-gray-400 font-medium text-gray-700">';
+  html += '</div>';
+  
+  html += '<div class="w-full sm:w-64 relative">';
+  html += '<i class="fa-solid fa-rocket absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 text-sm z-10 pointer-events-none"></i>';
+  html += '<select id="ctgFilter" onchange="searchTable()" class="w-full pl-10 pr-8 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 appearance-none cursor-pointer hover:border-gray-300 transition-colors">';
+  html += '<option value="">Semua Kategori Tampil</option>';
+  var categories = {};
+  for(var i=0; i<result.data.length; i++) {
+    var ctg = result.data[i].kategori || '';
+    if(ctg) categories[ctg] = true;
+  }
+  for(var c in categories) {
+    html += '<option value="'+escapeHtml(c)+'">Kategori ' + escapeHtml(c) + '</option>';
+  }
+  html += '</select>';
+  html += '<i class="fa-solid fa-angle-down absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none"></i>';
+  html += '</div></div>';
+  
+  // Header Tabel
+  html += '<div class="overflow-x-auto w-full"><table id="docTable" class="min-w-full divide-y divide-gray-200"><thead><tr>';
+  html += '<th class="px-6 py-4 text-left text-[11px] font-black text-gray-400 uppercase tracking-widest w-36">Tgl. Publikasi</th>';
+  html += '<th class="px-6 py-4 text-left text-[11px] font-black text-gray-400 uppercase tracking-widest">Identitas Dokumen</th>';
+  html += '<th class="px-6 py-4 text-left text-[11px] font-black text-gray-400 uppercase tracking-widest">Kelas Kategori</th>';
+  html += '<th class="px-6 py-4 text-center text-[11px] font-black text-gray-400 uppercase tracking-widest w-24">Ekstensi</th>';
+  if (result.isAdmin) {
+    html += '<th class="px-6 py-4 text-left text-[11px] font-black text-gray-400 uppercase tracking-widest w-48">Uploader</th>';
+  }
+  html += '<th class="px-6 py-4 text-center text-[11px] font-black text-gray-400 uppercase tracking-widest w-32">Tindakan <i class="fa-solid fa-bolt ml-1"></i></th>';
+  html += '</tr></thead><tbody id="tableBody" class="bg-white divide-y divide-gray-50">';
+  
+  if (result.data.length === 0) {
+    var colspan = result.isAdmin ? 6 : 5;
+    html += '<tr><td colspan="' + colspan + '" class="px-6 py-12 text-center text-gray-400"><i class="fa-solid fa-folder-open text-4xl mb-3 block"></i><p class="font-bold">Belum ada dokumen</p></td></tr>';
+  }
+  
+  for (var i = 0; i < result.data.length; i++) {
+    var doc = result.data[i];
+    var fileIcon = getFileIcon(doc.jenis_file);
+    
+    html += '<tr class="hover:bg-primary-50/50 group cursor-pointer transition-all">';
+    html += '<td class="px-6 py-4 text-sm font-medium text-gray-500">' + escapeHtml(doc.tgl_upload) + '</td>';
+    html += '<td class="px-6 py-4 flex items-center">';
+    html += '<div class="flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-xl border ' + fileIcon.border + ' ' + fileIcon.text + ' ' + fileIcon.bg + ' shadow-sm"><i class="fa-solid ' + fileIcon.icon + '"></i></div>';
+    html += '<div class="ml-4 text-sm font-bold text-gray-900">' + escapeHtml(doc.nama_dok) + '</div></td>';
+    html += '<td class="px-6 py-4"><span class="px-2.5 py-1 rounded bg-gray-100 text-gray-700 text-xs font-bold border border-gray-200">' + escapeHtml(doc.kategori) + '</span></td>';
+    html += '<td class="px-6 py-4 text-center"><span class="text-xs font-black text-gray-400">' + escapeHtml(doc.jenis_file) + '</span></td>';
+    
+    if (result.isAdmin) {
+      var uName = doc.uploader_nama || 'User Anonim';
+      var uId = doc.uploader_id;
+      var uInit = uName.split(' ').map(function(w){return w[0]}).join('').substring(0,2).toUpperCase();
+      
+      var uPhoto = '';
+      if(APP.cache.users) {
+        for(var u=0; u<APP.cache.users.length; u++) {
+          if(String(APP.cache.users[u].id) === String(uId)) {
+            uPhoto = APP.cache.users[u].foto_profil || '';
+            break;
+          }
+        }
+      }
+      
+      html += '<td class="px-6 py-4">';
+      html += '<div class="flex items-center">';
+      if(uPhoto) {
+        html += '<div class="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 mr-2.5 shadow-sm bg-gray-100 border border-gray-200"><img src="'+escapeHtml(uPhoto)+'" class="w-full h-full object-cover"/></div>';
+      } else {
+        html += '<div class="w-6 h-6 rounded-full bg-amber-500 text-white font-bold text-[9px] flex flex-shrink-0 items-center justify-center mr-2.5 shadow-sm border border-amber-600">' + uInit + '</div>';
+      }
+      html += '<span class="text-xs font-bold text-gray-700 whitespace-normal break-words leading-tight">' + escapeHtml(uName) + '</span></div></td>';
+    }
+    
+    html += '<td class="px-6 py-4 text-center"><div class="flex justify-center space-x-1 opacity-80 group-hover:opacity-100">';
+    html += '<button onclick="openPreviewModal(\'' + (doc.gdrive_file_id || '') + '\',\'' + escapeHtml(doc.nama_dok) + '\')" class="w-8 h-8 rounded-lg text-primary-600 bg-primary-50 hover:bg-primary-100 border border-transparent hover:border-primary-200 transition-colors" title="Lihat"><i class="fa-solid fa-eye text-sm"></i></button>';
+    
+    if (result.canCrud && !result.isViewOnly) {
+      var canEditThis = result.isAdmin || String(doc.uploader_id) === String(APP.user.id);
+      if (canEditThis) {
+        html += '<button onclick=\'openEditModal(' + JSON.stringify({rowIndex: doc._rowIndex, nama_dok: doc.nama_dok, kategori: doc.kategori, jenis_file: doc.jenis_file, tgl_upload: doc.tgl_upload}).replace(/'/g, "\\'") + ')\' class="w-8 h-8 rounded-lg text-amber-600 bg-amber-50 hover:bg-amber-100 border border-transparent hover:border-amber-200 transition-colors" title="Edit"><i class="fa-solid fa-pen-to-square text-sm"></i></button>';
+        html += '<button onclick="openDeleteModal(' + doc._rowIndex + ',\'' + escapeHtml(doc.nama_dok).replace(/'/g, "\\'") + '\')" class="w-8 h-8 rounded-lg text-red-600 bg-red-50 hover:bg-red-100 border border-transparent hover:border-red-200 transition-colors" title="Hapus"><i class="fa-solid fa-trash-can text-sm"></i></button>';
+      }
+    }
+    
+    html += '</div></td></tr>';
+  }
+  
+  html += '</tbody></table></div>';
+  
+  // Elemen kosong jika pencarian tidak ditemukan
+  html += '<div id="noSearchRes" class="hidden px-6 py-10 text-center text-gray-400"><i class="fa-solid fa-magnifying-glass text-3xl mb-3 block opacity-50"></i><p class="font-bold text-sm">Tidak ada dokumen yang cocok dengan pencarian.</p></div>';
+  
+  html += '<div class="px-6 py-3 border-t border-gray-100 text-[11px] font-bold text-gray-400">Total <span id="lblTotal">' + result.data.length + '</span> dokumen di menu ini</div>';
+  html += '</div>';
+  
+  document.getElementById('main-content').innerHTML = html;
+}
+
+// === Fungsi Pencarian Lokal ===
+function searchTable() {
+  var input = document.getElementById("searchInput");
+  var filterList = document.getElementById("ctgFilter");
+  if (!input || !filterList) return;
+  
+  var query = input.value.toLowerCase();
+  var catQuery = filterList.value.toLowerCase();
+  var tableInfo = document.getElementById("tableBody");
+  var tr = tableInfo.getElementsByTagName("tr");
+  
+  var matchCount = 0;
+  
+  for (var i = 0; i < tr.length; i++) {
+    // Abaikan baris placeholder "Belum ada dokumen" jika ada
+    if (tr[i].getElementsByTagName("td").length === 1) continue;
+    
+    var tdName = tr[i].getElementsByTagName("td")[1];
+    var tdCat = tr[i].getElementsByTagName("td")[2];
+    
+    if (tdName && tdCat) {
+      var txtName = tdName.textContent || tdName.innerText;
+      var txtCat = tdCat.textContent || tdCat.innerText;
+      
+      var matchesText = txtName.toLowerCase().indexOf(query) > -1;
+      var matchesCat = catQuery === "" || txtCat.toLowerCase() === catQuery;
+      
+      if (matchesText && matchesCat) {
+        tr[i].style.display = "";
+        matchCount++;
+      } else {
+        tr[i].style.display = "none";
+      }
+    }
+  }
+  
+  // Show/Hide no result
+  var noResEl = document.getElementById("noSearchRes");
+  var tableEl = document.getElementById("docTable");
+  var lblTotal = document.getElementById("lblTotal");
+  
+  if (matchCount === 0 && tr.length > 0 && query.length > 0) {
+    if(noResEl) noResEl.classList.remove("hidden");
+    if(tableEl) tableEl.classList.add("hidden");
+  } else {
+    if(noResEl) noResEl.classList.add("hidden");
+    if(tableEl) tableEl.classList.remove("hidden");
+  }
+  
+  if(lblTotal) lblTotal.textContent = matchCount;
+}
+
+// === Settings Page ===
+function loadSettingPage() {
+  var html = '<div class="flex flex-col md:flex-row md:items-end justify-between mb-6 md:mb-8 gap-4"><div>';
+  html += '<h2 class="text-3xl font-display font-black text-gray-900 tracking-tight">Pengaturan Akun</h2>';
+  html += '<p class="text-sm font-medium text-gray-500 mt-1.5"><i class="fa-solid fa-circle-info mr-1.5 text-gray-400"></i> Kelola preferensi akun dan manajemen user.</p></div></div>';
+  
+  html += '<div class="flex border-b border-gray-200 mb-8 overflow-x-auto">';
+  html += '<button onclick="switchSettingTab(\'profil\')" id="tab-profil" class="px-6 py-3 text-sm font-bold border-b-2 border-primary-600 text-primary-700 whitespace-nowrap"><i class="fa-solid fa-user mr-2"></i>Profil Saya</button>';
+  if (APP.user.role === 'admin') {
+    html += '<button onclick="switchSettingTab(\'sistem\')" id="tab-sistem" class="px-6 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap"><i class="fa-solid fa-sliders mr-2"></i>Pengaturan Sistem</button>';
+    html += '<button onclick="switchSettingTab(\'users\')" id="tab-users" class="px-6 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap"><i class="fa-solid fa-users-cog mr-2"></i>Manajemen User</button>';
+    html += '<button onclick="switchSettingTab(\'kategori\')" id="tab-kategori" class="px-6 py-3 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap"><i class="fa-solid fa-tags mr-2"></i>Kategori Menu</button>';
+  }
+  html += '</div>';
+  
+  var roleLabels = { admin: 'Koordinator Prodi', dosen: 'Dosen Pengajar', tendik: 'Tenaga Kependidikan' };
+  var initials = APP.user.nama.split(' ').map(function(w) { return w[0]; }).join('').substring(0, 2).toUpperCase();
+  
+  html += '<div id="panel-profil" class="setting-panel">';
+  html += '<div class="bg-white shadow-sm rounded-2xl border border-gray-200 overflow-hidden max-w-2xl"><div class="p-6 md:p-8">';
+  html += '<div class="flex items-center space-x-6 mb-8 pb-8 border-b border-gray-100"><div class="relative group cursor-pointer" onclick="document.getElementById(\'input-foto-profil\').click()">';
+  
+  if (APP.user.foto_profil && APP.user.foto_profil !== '') {
+    html += '<div class="w-24 h-24 rounded-2xl shadow-xl shadow-primary-500/30 overflow-hidden relative"><img src="' + escapeHtml(APP.user.foto_profil) + '" class="w-full h-full object-cover"/>';
+  } else {
+    html += '<div class="w-24 h-24 rounded-2xl bg-gradient-to-tr from-primary-500 to-indigo-500 text-white flex items-center justify-center font-display font-black text-4xl shadow-xl shadow-primary-500/30 relative">' + initials;
+  }
+  
+  html += '<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"><i class="fa-solid fa-camera text-2xl"></i></div></div>';
+  html += '<input type="file" id="input-foto-profil" class="hidden" accept="image/*" onchange="handleUploadFoto(event)">';
+  html += '<div class="absolute -bottom-2 -right-2 bg-green-500 w-6 h-6 rounded-full border-4 border-white z-10"></div></div>';
+  html += '<div><h3 class="text-2xl font-black text-gray-900 font-display">' + escapeHtml(APP.user.nama) + '</h3>';
+  html += '<p class="text-gray-500 font-bold mb-1">' + (roleLabels[APP.user.role] || APP.user.role) + '</p>';
+  html += '<span class="px-2 py-0.5 bg-primary-50 text-primary-700 text-[10px] font-black rounded uppercase tracking-widest border border-primary-200">' + APP.user.role + '</span></div></div>';
+  
+  html += '<form onsubmit="return handleUpdateProfile(event)" class="space-y-6">';
+  html += '<div><label class="block text-sm font-bold text-gray-700 mb-2">NIP / Username</label>';
+  html += '<input type="text" id="profile-username" class="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500 outline-none" value="' + escapeHtml(APP.user.username) + '"></div>';
+  html += '<div><label class="block text-sm font-bold text-gray-700 mb-2">Nama Lengkap</label>';
+  html += '<input type="text" id="profile-nama" class="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500 outline-none" value="' + escapeHtml(APP.user.nama) + '"></div>';
+  html += '<div class="pt-4 border-t border-gray-100"><h4 class="font-bold text-gray-900 mb-4">Ubah Kata Sandi (Opsional)</h4>';
+  html += '<input type="password" id="profile-password" class="block w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium outline-none mb-3" placeholder="Kata Sandi Baru (kosongkan jika tidak diubah)"></div>';
+  html += '<div class="pt-4"><button type="submit" id="btn-save-profile" class="px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-primary-500/30 transition-all">';
+  html += '<i class="fa-solid fa-floppy-disk mr-2"></i> Simpan Pembaruan</button></div>';
+  html += '</form></div></div></div>';
+  
+  // Panel Users, Kategori, & Sistem (admin only)
+  if (APP.user.role === 'admin') {
+    html += '<div id="panel-sistem" class="setting-panel hidden">';
+    html += '<div class="bg-white shadow-sm rounded-2xl border border-gray-200 overflow-hidden">';
+    html += '<div class="p-6 md:p-8"><div class="flex items-center mb-6"><div class="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center mr-4"><i class="fa-solid fa-sliders text-xl"></i></div><div><h3 class="text-xl font-display font-black text-gray-900 tracking-tight">Pengaturan Sistem</h3><p class="text-xs text-gray-500 font-medium mt-0.5">Edit teks dan judul utama aplikasi</p></div></div>';
+    html += '<form onsubmit="return handleSaveSettings(event)" class="space-y-6 max-w-2xl">';
+    html += '<div><label class="block text-sm font-bold text-gray-700 mb-2">Nama Sistem</label>';
+    html += '<input type="text" id="setting-title" value="' + escapeHtml(SERVER_SETTINGS.title) + '" required class="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-900 focus:ring-2 focus:ring-primary-500 outline-none transition-all"></div>';
+    html += '<div><label class="block text-sm font-bold text-gray-700 mb-2">Program Studi (Sub-judul)</label>';
+    html += '<input type="text" id="setting-prodi" value="' + escapeHtml(SERVER_SETTINGS.prodi) + '" required class="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-900 focus:ring-2 focus:ring-primary-500 outline-none transition-all"></div>';
+    html += '<div><label class="block text-sm font-bold text-gray-700 mb-2">Kalimat Banner / Dashboard</label>';
+    html += '<textarea id="setting-desc" rows="3" required class="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-900 focus:ring-2 focus:ring-primary-500 outline-none transition-all">' + escapeHtml(SERVER_SETTINGS.desc) + '</textarea>';
+    html += '<p class="text-[11px] text-gray-400 font-medium mt-1">Gunakan kata "Program Studi" jika perlu. Teks ini akan dirender di dashboard dan halaman login.</p></div>';
+    html += '<div class="pt-2"><button type="submit" id="btn-save-settings" class="relative overflow-hidden inline-flex items-center px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-bold font-display shadow-lg shadow-primary-500/30 transition-all"><i class="fa-solid fa-floppy-disk mr-2"></i> Simpan Pengaturan</button></div>';
+    html += '</form></div></div></div>';
+
+    html += '<div id="panel-users" class="setting-panel hidden"><div id="user-table-container"></div></div>';
+    html += '<div id="panel-kategori" class="setting-panel hidden"><div id="kategori-table-container"></div></div>';
+  }
+  
+  document.getElementById('main-content').innerHTML = html;
+  
+  // Render user table langsung dari cache jika admin
+  if (APP.user.role === 'admin') {
+    if (APP.cache.users) renderUserTable(APP.cache.users, APP.cache.userId);
+    renderCategoryTable();
+  }
+}
+
+function switchSettingTab(tab) {
+  var panels = document.querySelectorAll('.setting-panel');
+  for (var i = 0; i < panels.length; i++) panels[i].classList.add('hidden');
+  document.getElementById('panel-' + tab).classList.remove('hidden');
+  
+  document.getElementById('panel-' + tab).classList.remove('hidden');
+  
+  var tabs = document.querySelectorAll('[id^="tab-"]');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.remove('border-primary-600', 'bg-primary-50', 'text-primary-700');
+    tabs[i].classList.add('border-transparent', 'text-gray-500');
+  }
+  document.getElementById('tab-' + tab).classList.add('border-primary-600', 'bg-primary-50', 'text-primary-700');
+  document.getElementById('tab-' + tab).classList.remove('border-transparent', 'text-gray-500');
+}
+
+function handleSaveSettings(e) {
+  e.preventDefault();
+  var btn = document.getElementById('btn-save-settings');
+  setBtnLoading(btn, 'Menyimpan...');
+  
+  var newSettings = {
+    title: document.getElementById('setting-title').value.trim(),
+    prodi: document.getElementById('setting-prodi').value.trim(),
+    desc: document.getElementById('setting-desc').value.trim()
+  };
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if(result.success) {
+        showToast(result.message, 'success');
+        setTimeout(function() {
+          window.location.reload(); // Refresh total agar title & var PHP ikut ganti
+        }, 1000);
+      } else {
+        showToast(result.message, 'error');
+        setBtnDone(btn, '<i class="fa-solid fa-floppy-disk mr-2"></i> Simpan Pengaturan');
+      }
+    })
+    .withFailureHandler(function() { setBtnDone(btn, '<i class="fa-solid fa-floppy-disk mr-2"></i> Simpan Pengaturan'); showToast('Gagal terhubung server', 'error'); })
+    .saveAppSettings(APP.token, newSettings);
+  return false;
+}
+
+function handleUpdateProfile(e) {
+  e.preventDefault();
+  var btn = document.getElementById('btn-save-profile');
+  setBtnLoading(btn, 'Menyimpan...');
+  
+  var profileData = {
+    nama: document.getElementById('profile-nama').value,
+    username_nip: document.getElementById('profile-username').value,
+    password: document.getElementById('profile-password').value || ''
+  };
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      setBtnDone(btn, '<i class="fa-solid fa-floppy-disk mr-2"></i> Simpan Pembaruan');
+      if (result.success) {
+        APP.user.nama = profileData.nama;
+        APP.user.username = profileData.username_nip;
+        setupUserInfo();
+        showToast(result.message, 'success');
+      } else {
+        showToast(result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(err) { setBtnDone(btn, '<i class="fa-solid fa-floppy-disk mr-2"></i> Simpan Pembaruan'); showToast('Gagal menyimpan.', 'error'); })
+    .updateProfile(APP.token, profileData);
+  
+  return false;
+}
+
+// Upload Foto Profil
+function handleUploadFoto(e) {
+  var file = e.target.files[0];
+  if(!file) return;
+  if(file.size > 2 * 1024 * 1024) { showToast('Ukuran foto maksimal 2MB', 'error'); return; }
+  
+  showLoading('Mengupload foto...');
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var base64 = ev.target.result.split(',')[1];
+    google.script.run
+      .withSuccessHandler(function(result) {
+        hideLoading();
+        if(result.success) {
+          APP.user.foto_profil = result.url;
+          setupUserInfo();
+          showToast(result.message, 'success');
+          loadSettingPage();
+        } else {
+          showToast(result.message, 'error');
+        }
+      })
+      .withFailureHandler(function() { hideLoading(); showToast('Gagal mengupload profil.', 'error'); })
+      .updateProfilePic(APP.token, base64, file.type, file.name);
+  };
+  reader.readAsDataURL(file);
+}
+
+// === Manajemen Kategori ===
+var currentCategoryTab = 'Dokumen_Prodi';
+
+function renderCategoryTable() {
+  var container = document.getElementById('kategori-table-container');
+  if(!container) return;
+  
+  var tabs = [
+    { id: 'Dokumen_Prodi', label: 'Prodi' },
+    { id: 'Dokumen_Dosen', label: 'Dosen' },
+    { id: 'Dokumen_Tendik', label: 'Tendik' },
+    { id: 'Dokumen_Mahasiswa', label: 'Mahasiswa' }
+  ];
+  
+  var html = '<div class="bg-white shadow-sm rounded-2xl border border-gray-200 overflow-hidden mb-6">';
+  html += '<div class="flex border-b border-gray-100 bg-gray-50/50 overflow-x-auto">';
+  for(var t=0; t<tabs.length; t++) {
+    var active = currentCategoryTab === tabs[t].id ? 'border-primary-600 text-primary-700 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700';
+    html += '<button onclick="currentCategoryTab=\''+tabs[t].id+'\'; renderCategoryTable();" class="px-5 py-3 text-sm font-bold border-b-2 '+active+' whitespace-nowrap">' + tabs[t].label + '</button>';
+  }
+  html += '</div>';
+  
+  html += '<div class="p-5 flex flex-col sm:flex-row gap-4 justify-between items-center bg-white border-b border-gray-100">';
+  html += '<p class="text-sm font-bold text-gray-500"><i class="fa-solid fa-list mr-2"></i>Kategori ' + currentCategoryTab.replace('Dokumen_', '') + '</p>';
+  html += '<div class="flex gap-2 w-full sm:w-auto">';
+  html += '<input type="text" id="new-category-name" placeholder="Nama kategori baru..." class="w-full sm:w-64 px-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none">';
+  html += '<button onclick="handleAddCategory()" class="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-bold shadow-md transition-colors whitespace-nowrap"><i class="fa-solid fa-plus mr-1"></i> Tambah</button>';
+  html += '</div></div>';
+  
+  var categories = (APP.cache.categories && APP.cache.categories[currentCategoryTab]) ? APP.cache.categories[currentCategoryTab] : [];
+  
+  html += '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead><tr>';
+  html += '<th class="px-6 py-4 text-left text-[11px] font-black text-gray-400 uppercase bg-gray-50 w-20">No</th>';
+  html += '<th class="px-6 py-4 text-left text-[11px] font-black text-gray-400 uppercase bg-gray-50">Nama Kategori</th>';
+  html += '<th class="px-6 py-4 text-center text-[11px] font-black text-gray-400 uppercase bg-gray-50 w-32">Aksi</th>';
+  html += '</tr></thead><tbody class="divide-y divide-gray-100">';
+  
+  if (categories.length === 0) {
+    html += '<tr><td colspan="3" class="px-6 py-8 text-center text-gray-400 text-sm font-bold"><i class="fa-solid fa-folder-open text-3xl mb-2 block"></i>Belum ada kategori untuk menu ini.</td></tr>';
+  } else {
+    for (var i = 0; i < categories.length; i++) {
+      var isFromDb = categories[i].rowIndex > 0;
+      html += '<tr class="hover:bg-gray-50 transition-colors">';
+      html += '<td class="px-6 py-3 text-sm text-gray-400 font-medium">' + (i + 1) + '</td>';
+      html += '<td class="px-6 py-3 text-sm font-bold text-gray-700">' + escapeHtml(categories[i].nama) + '</td>';
+      html += '<td class="px-6 py-3 text-center"><div class="flex justify-center space-x-1">';
+      html += '<button onclick="openEditCategoryModal(' + categories[i].rowIndex + ',\'' + escapeHtml(categories[i].nama).replace(/'/g, "\\'") + '\')" class="w-8 h-8 rounded-lg text-amber-600 bg-amber-50 hover:bg-amber-100 border border-transparent hover:border-amber-200 transition-colors" title="Edit"><i class="fa-solid fa-pen-to-square text-sm"></i></button>';
+      html += '<button onclick="handleDeleteCategory(' + categories[i].rowIndex + ')" class="w-8 h-8 rounded-lg text-red-500 bg-red-50 hover:bg-red-100 border border-transparent hover:border-red-200 transition-colors" title="Hapus"><i class="fa-solid fa-trash-can text-sm"></i></button>';
+      html += '</div></td></tr>';
+    }
+  }
+  
+  html += '</tbody></table></div></div>';
+  container.innerHTML = html;
+}
+
+function handleAddCategory() {
+  var input = document.getElementById('new-category-name');
+  var name = input.value.trim();
+  if(!name) return showToast('Masukkan nama kategori', 'error');
+  
+  showLoading('Menambahkan kategori...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if(res.success) {
+        showToast(res.message, 'success');
+        input.value = '';
+        refreshData(function(){ 
+          switchSettingTab('kategori');
+          renderCategoryTable(); 
+        });
+      } else { showToast(res.message, 'error'); }
+    })
+    .withFailureHandler(function() { hideLoading(); showToast('Gagal terhubung ke server', 'error'); })
+    .addCategory(APP.token, currentCategoryTab, name);
+}
+
+function handleDeleteCategory(rowIndex) {
+  if(!confirm('Apakah Anda yakin ingin menghapus kategori ini?')) return;
+  showLoading('Menghapus kategori...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if(res.success) {
+        showToast(res.message, 'success');
+        refreshData(function(){ 
+          switchSettingTab('kategori');
+          renderCategoryTable(); 
+        });
+      } else { showToast(res.message, 'error'); }
+    })
+    .withFailureHandler(function() { hideLoading(); showToast('Gagal terhubung ke server', 'error'); })
+    .deleteCategory(APP.token, rowIndex);
+}
+
+function openEditCategoryModal(rowIndex, currentName) {
+  document.getElementById('edit-kategori-row-index').value = rowIndex;
+  document.getElementById('edit-kategori-nama').value = currentName;
+  openModal('modal-edit-kategori');
+}
+
+function handleEditCategory(e) {
+  e.preventDefault();
+  var rowIndex = parseInt(document.getElementById('edit-kategori-row-index').value);
+  var newName = document.getElementById('edit-kategori-nama').value.trim();
+  if(!newName) return showToast('Nama kategori tidak boleh kosong', 'error');
+  
+  var btn = document.getElementById('btn-submit-edit-kategori');
+  setBtnLoading(btn, 'Menyimpan...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      closeModal('modal-edit-kategori');
+      setBtnDone(btn);
+      if(res.success) {
+        showToast(res.message, 'success');
+        refreshData(function(){
+          switchSettingTab('kategori');
+          renderCategoryTable();
+        });
+      } else { showToast(res.message, 'error'); }
+    })
+    .withFailureHandler(function() { setBtnDone(btn); showToast('Gagal terhubung ke server', 'error'); })
+    .editCategory(APP.token, rowIndex, newName);
+  return false;
+}
+
+// === User Management (render dari cache) ===
+function renderUserTable(users, currentUserId) {
+  var container = document.getElementById('user-table-container');
+  if (!container) return;
+  
+  var html = '<div class="bg-white shadow-sm rounded-2xl border border-gray-200 overflow-hidden">';
+  html += '<div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row gap-4 justify-between items-center">';
+  html += '<p class="text-sm font-bold text-gray-500">Total ' + users.length + ' user terdaftar</p>';
+  html += '<button id="btn-add-user" onclick="openAddUserModal()" class="btn-animate inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-green-600 hover:bg-green-700 shadow-sm shadow-green-500/30"><i class="fa-solid fa-user-plus mr-2"></i> Tambah User</button></div>';
+  
+  html += '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead><tr>';
+  html += '<th class="px-6 py-4 text-left text-[11px] font-black text-gray-400 uppercase bg-gray-50/80 w-12">No</th>';
+  html += '<th class="px-6 py-4 text-left text-[11px] font-black text-gray-400 uppercase bg-gray-50/80">Nama</th>';
+  html += '<th class="px-6 py-4 text-left text-[11px] font-black text-gray-400 uppercase bg-gray-50/80">NIP/Username</th>';
+  html += '<th class="px-6 py-4 text-center text-[11px] font-black text-gray-400 uppercase bg-gray-50/80 w-28">Role</th>';
+  html += '<th class="px-6 py-4 text-center text-[11px] font-black text-gray-400 uppercase bg-gray-50/80 w-32">Hak Akses</th>';
+  html += '<th class="px-6 py-4 text-center text-[11px] font-black text-gray-400 uppercase bg-gray-50/80 w-36">Tindakan</th>';
+  html += '</tr></thead><tbody class="bg-white divide-y divide-gray-100">';
+  
+  var roleColors = { admin: 'primary', dosen: 'emerald', tendik: 'amber' };
+  
+  for (var i = 0; i < users.length; i++) {
+    var u = users[i];
+    var isSelf = String(u.id) === String(currentUserId);
+    var color = roleColors[u.role] || 'gray';
+    var initials = u.nama.split(' ').map(function(w) { return w[0]; }).join('').substring(0, 2).toUpperCase();
+    
+    html += '<tr class="hover:bg-gray-50 group transition-all">';
+    html += '<td class="px-6 py-4 text-sm font-medium text-gray-400">' + (i + 1) + '</td>';
+    html += '<td class="px-6 py-4"><div class="flex items-center">';
+    if (u.foto_profil && u.foto_profil !== '') {
+      html += '<div class="w-9 h-9 rounded-lg overflow-hidden mr-3"><img src="' + escapeHtml(u.foto_profil) + '" class="w-full h-full object-cover"/></div>';
+    } else {
+      html += '<div class="w-9 h-9 rounded-lg bg-' + color + '-100 text-' + color + '-700 flex items-center justify-center font-bold text-sm mr-3 border border-' + color + '-200">' + initials + '</div>';
+    }
+    html += '<div><p class="text-sm font-bold text-gray-900">' + escapeHtml(u.nama) + '</p></div></div></td>';
+    html += '<td class="px-6 py-4 text-sm font-medium text-gray-700 font-mono">' + escapeHtml(u.username_nip) + '</td>';
+    html += '<td class="px-6 py-4 text-center"><span class="px-2.5 py-1 rounded-lg bg-' + color + '-50 text-' + color + '-700 text-xs font-bold border border-' + color + '-200 capitalize">' + u.role + '</span></td>';
+    html += '<td class="px-6 py-4 text-center"><span class="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 text-xs font-bold border border-gray-200 capitalize">' + (u.hak_akses || 'default') + '</span></td>';
+    
+    if (isSelf) {
+      html += '<td class="px-6 py-4 text-center text-sm text-gray-400 font-medium italic">Anda sendiri</td>';
+    } else {
+      html += '<td class="px-6 py-4 text-center"><div class="flex justify-center space-x-1 opacity-80 group-hover:opacity-100">';
+      html += '<button onclick=\'openEditUserModal(' + JSON.stringify({rowIndex: u._rowIndex, nama: u.nama, username_nip: u.username_nip, role: u.role, hak_akses: u.hak_akses}).replace(/'/g, "\\'") + ')\' class="w-8 h-8 rounded-lg text-amber-600 bg-amber-50 hover:bg-amber-100 border border-transparent hover:border-amber-200 transition-colors"><i class="fa-solid fa-pen-to-square text-sm"></i></button>';
+      html += '<button onclick="openDeleteUserModal(' + u._rowIndex + ',\'' + escapeHtml(u.nama).replace(/'/g, "\\'") + '\')" class="w-8 h-8 rounded-lg text-red-600 bg-red-50 hover:bg-red-100 border border-transparent hover:border-red-200 transition-colors"><i class="fa-solid fa-trash-can text-sm"></i></button>';
+      html += '</div></td>';
+    }
+    html += '</tr>';
+  }
+  
+  html += '</tbody></table></div></div>';
+  container.innerHTML = html;
+}
+
+// === Modal Functions ===
+function openModal(id) {
+  var modal = document.getElementById(id);
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+  void modal.offsetWidth;
+  requestAnimationFrame(function() { modal.classList.add('show'); });
+}
+
+function closeModal(id) {
+  var modal = document.getElementById(id);
+  modal.classList.remove('show');
+  modal.classList.add('closing');
+  setTimeout(function() {
+    modal.classList.add('hidden');
+    modal.classList.remove('closing');
+    modal.style.display = '';
+  }, 250);
+}
+
+// Upload Modal
+function openUploadModal(sheetName) {
+  APP.currentSheet = sheetName;
+  var categories = (APP.cache.categories && APP.cache.categories[sheetName]) ? APP.cache.categories[sheetName] : [];
+  
+  var select = document.getElementById('upload-kategori');
+  select.innerHTML = '<option value="">-- Pilih Kategori --</option>';
+  for (var i = 0; i < categories.length; i++) {
+    select.innerHTML += '<option value="' + escapeHtml(categories[i].nama) + '">' + escapeHtml(categories[i].nama) + '</option>';
+  }
+  
+  document.getElementById('upload-nama').value = '';
+  document.getElementById('upload-file').value = '';
+  document.getElementById('upload-filename-text').textContent = 'PDF, DOCX, XLSX, JPG, PNG (Maks. 10MB)';
+  openModal('modal-upload');
+}
+
+function handleUpload(e) {
+  e.preventDefault();
+  var fileInput = document.getElementById('upload-file');
+  var file = fileInput.files[0];
+  
+  if (!file) { showToast('Pilih file terlebih dahulu.', 'error'); return false; }
+  if (file.size > 10 * 1024 * 1024) { showToast('Ukuran file maksimal 10MB.', 'error'); return false; }
+  
+  var btn = document.getElementById('btn-submit-upload');
+  setBtnLoading(btn, 'Mengupload...');
+  
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var base64 = ev.target.result.split(',')[1];
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        closeModal('modal-upload');
+        setBtnDone(btn);
+        if (result.success) {
+          showToast(result.message, 'success');
+          refreshData(function() { navigateTo('dokumen', APP.currentSheet); });
+        } else {
+          if (result.message === 'SESSION_EXPIRED') return handleSessionExpired();
+          showToast(result.message, 'error');
+        }
+      })
+      .withFailureHandler(function(err) { setBtnDone(btn); showToast('Upload gagal.', 'error'); })
+      .addDocument(APP.token, APP.currentSheet, {
+        nama_dok: document.getElementById('upload-nama').value,
+        kategori: document.getElementById('upload-kategori').value,
+        fileBase64: base64,
+        fileName: file.name,
+        mimeType: file.type
+      });
+  };
+  reader.readAsDataURL(file);
+  return false;
+}
+
+// Edit Modal
+function openEditModal(doc) {
+  document.getElementById('edit-row-index').value = doc.rowIndex || doc._rowIndex;
+  document.getElementById('edit-nama').value = doc.nama_dok;
+  document.getElementById('edit-file-info').textContent = doc.nama_dok + '.' + (doc.jenis_file || '').toLowerCase();
+  document.getElementById('edit-file').value = '';
+  document.getElementById('edit-filename-text').textContent = 'Atau klik untuk memilih file...';
+  
+  var categories = (APP.cache.categories && APP.cache.categories[APP.currentSheet]) ? APP.cache.categories[APP.currentSheet] : [];
+  var select = document.getElementById('edit-kategori');
+  select.innerHTML = '<option value="">-- Pilih --</option>';
+  for (var i = 0; i < categories.length; i++) {
+    select.innerHTML += '<option value="' + escapeHtml(categories[i].nama) + '"' + (categories[i].nama === doc.kategori ? ' selected' : '') + '>' + escapeHtml(categories[i].nama) + '</option>';
+  }
+  
+  openModal('modal-edit');
+}
+
+function handleEdit(e) {
+  e.preventDefault();
+  var fileInput = document.getElementById('edit-file');
+  var file = fileInput.files.length > 0 ? fileInput.files[0] : null;
+  var btn = document.getElementById('btn-submit-edit');
+  setBtnLoading(btn, 'Menyimpan...');
+  
+  function sendEdit(base64, fileName, mimeType) {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        closeModal('modal-edit');
+        setBtnDone(btn);
+        if (result.success) {
+          showToast(result.message, 'success');
+          refreshData(function() { navigateTo('dokumen', APP.currentSheet); });
+        } else {
+          if (result.message === 'SESSION_EXPIRED') return handleSessionExpired();
+          showToast(result.message, 'error');
+        }
+      })
+      .withFailureHandler(function(err) { setBtnDone(btn); showToast('Gagal menyimpan.', 'error'); })
+      .editDocument(APP.token, APP.currentSheet, {
+        rowIndex: parseInt(document.getElementById('edit-row-index').value),
+        nama_dok: document.getElementById('edit-nama').value,
+        kategori: document.getElementById('edit-kategori').value,
+        fileBase64: base64 || null,
+        fileName: fileName || null,
+        mimeType: mimeType || null
+      });
+  }
+  
+  if (file) {
+    if (file.size > 10 * 1024 * 1024) { setBtnDone(btn); showToast('Ukuran file maksimal 10MB.', 'error'); return false; }
+    var reader = new FileReader();
+    reader.onload = function(ev) { sendEdit(ev.target.result.split(',')[1], file.name, file.type); };
+    reader.readAsDataURL(file);
+  } else {
+    sendEdit(null, null, null);
+  }
+  return false;
+}
+
+// Delete Modal
+var deleteTarget = { rowIndex: 0, name: '' };
+function openDeleteModal(rowIndex, name) {
+  deleteTarget = { rowIndex: rowIndex, name: name };
+  document.getElementById('delete-doc-name').textContent = name;
+  openModal('modal-delete');
+}
+
+function handleDelete() {
+  var btn = document.getElementById('btn-confirm-delete');
+  setBtnLoading(btn, 'Menghapus...');
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      closeModal('modal-delete');
+      setBtnDone(btn, 'Ya, Hapus Permanen');
+      if (result.success) {
+        showToast(result.message, 'success');
+        refreshData(function() { navigateTo('dokumen', APP.currentSheet); });
+      } else {
+        if (result.message === 'SESSION_EXPIRED') return handleSessionExpired();
+        showToast(result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(err) { setBtnDone(btn, 'Ya, Hapus Permanen'); showToast('Gagal menghapus.', 'error'); })
+    .deleteDocument(APP.token, APP.currentSheet, deleteTarget.rowIndex);
+}
+
+// Preview Modal
+function openPreviewModal(fileId, fileName) {
+  document.getElementById('preview-title').textContent = fileName;
+  var previewArea = document.getElementById('preview-area');
+  var viewLink = document.getElementById('preview-open-link');
+  
+  if (fileId) {
+    previewArea.innerHTML = '<iframe src="https://drive.google.com/file/d/' + fileId + '/preview" class="w-full h-full rounded-xl" frameborder="0" allowfullscreen></iframe>';
+    viewLink.href = 'https://drive.google.com/file/d/' + fileId + '/view';
+    viewLink.classList.remove('hidden');
+  } else {
+    previewArea.innerHTML = '<div class="flex flex-col items-center justify-center h-full"><i class="fa-solid fa-file-circle-question text-6xl text-gray-300 mb-4"></i><p class="text-gray-400 font-bold">Preview tidak tersedia</p></div>';
+    viewLink.classList.add('hidden');
+  }
+  
+  openModal('modal-preview');
+}
+
+// User Modals
+function openAddUserModal() {
+  document.getElementById('add-user-nama').value = '';
+  document.getElementById('add-user-username').value = '';
+  document.getElementById('add-user-password').value = '';
+  document.getElementById('add-user-role').value = '';
+  openModal('modal-add-user');
+}
+
+function handleAddUser(e) {
+  e.preventDefault();
+  var btn = document.getElementById('btn-submit-add-user');
+  setBtnLoading(btn, 'Menambahkan...');
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      closeModal('modal-add-user');
+      setBtnDone(btn, '<i class="fa-solid fa-user-plus mr-2"></i> Tambah');
+      if (result.success) {
+        showToast(result.message, 'success');
+        refreshData(function() {
+          if (APP.cache.users) renderUserTable(APP.cache.users, APP.cache.userId);
+        });
+      } else { showToast(result.message, 'error'); }
+    })
+    .withFailureHandler(function(err) { setBtnDone(btn, '<i class="fa-solid fa-user-plus mr-2"></i> Tambah'); showToast('Gagal menambahkan user.', 'error'); })
+    .addUser(APP.token, {
+      nama: document.getElementById('add-user-nama').value,
+      username_nip: document.getElementById('add-user-username').value,
+      password: document.getElementById('add-user-password').value,
+      role: document.getElementById('add-user-role').value,
+      hak_akses: document.getElementById('add-user-access').value
+    });
+  return false;
+}
+
+function openEditUserModal(user) {
+  document.getElementById('edit-user-row').value = user.rowIndex;
+  document.getElementById('edit-user-nama').value = user.nama;
+  document.getElementById('edit-user-username').value = user.username_nip;
+  document.getElementById('edit-user-password').value = '';
+  document.getElementById('edit-user-role').value = user.role;
+  document.getElementById('edit-user-access').value = user.hak_akses || 'default';
+  openModal('modal-edit-user');
+}
+
+function handleEditUser(e) {
+  e.preventDefault();
+  var btn = document.getElementById('btn-submit-edit-user');
+  setBtnLoading(btn, 'Menyimpan...');
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      closeModal('modal-edit-user');
+      setBtnDone(btn, '<i class="fa-solid fa-floppy-disk mr-2"></i> Simpan');
+      if (result.success) {
+        showToast(result.message, 'success');
+        refreshData(function() {
+          if (APP.cache.users) renderUserTable(APP.cache.users, APP.cache.userId);
+        });
+      } else { showToast(result.message, 'error'); }
+    })
+    .withFailureHandler(function(err) { setBtnDone(btn, '<i class="fa-solid fa-floppy-disk mr-2"></i> Simpan'); showToast('Gagal menyimpan.', 'error'); })
+    .editUser(APP.token, {
+      rowIndex: parseInt(document.getElementById('edit-user-row').value),
+      nama: document.getElementById('edit-user-nama').value,
+      username_nip: document.getElementById('edit-user-username').value,
+      password: document.getElementById('edit-user-password').value,
+      role: document.getElementById('edit-user-role').value,
+      hak_akses: document.getElementById('edit-user-access').value
+    });
+  return false;
+}
+
+var deleteUserTarget = { rowIndex: 0, name: '' };
+function openDeleteUserModal(rowIndex, name) {
+  deleteUserTarget = { rowIndex: rowIndex, name: name };
+  document.getElementById('delete-user-name').textContent = name;
+  openModal('modal-delete-user');
+}
+
+function handleDeleteUser() {
+  var btn = document.getElementById('btn-confirm-delete-user');
+  setBtnLoading(btn, 'Menghapus...');
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      closeModal('modal-delete-user');
+      setBtnDone(btn, 'Ya, Hapus User');
+      if (result.success) {
+        showToast(result.message, 'success');
+        refreshData(function() {
+          if (APP.cache.users) renderUserTable(APP.cache.users, APP.cache.userId);
+        });
+      } else { showToast(result.message, 'error'); }
+    })
+    .withFailureHandler(function(err) { setBtnDone(btn, 'Ya, Hapus User'); showToast('Gagal menghapus.', 'error'); })
+    .deleteUser(APP.token, deleteUserTarget.rowIndex);
+}
+
+// === Button Loading Helpers ===
+function setBtnLoading(btn, text) {
+  if (!btn) return;
+  btn.disabled = true;
+  
+  // Menggunakan teks transparan agar ukuran fix, overlay absolut spinner
+  var defaultText = btn.innerHTML;
+  btn.setAttribute('data-original', defaultText);
+  
+  var wrapper = '<span class="opacity-0 w-full flex-grow">' + defaultText + '</span>';
+  wrapper += '<div class="absolute inset-0 flex items-center justify-center"><div class="w-5 h-5 border-[3px] border-white/30 border-t-white rounded-full animate-spin mr-2"></div><span class="font-bold">'+(text||'Memproses...')+'</span></div>';
+  
+  btn.innerHTML = wrapper;
+  btn.classList.add('cursor-wait', 'opacity-90');
+}
+
+function setBtnDone(btn) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.innerHTML = btn.getAttribute('data-original') || 'OK';
+  btn.classList.remove('cursor-wait', 'opacity-90');
+  btn.removeAttribute('data-original');
+}
+
+// === Utilities ===
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('sidebar-open');
+  document.getElementById('sidebar-backdrop').classList.toggle('active');
+}
+
+function showLoading(msg) {
+  var o = document.getElementById('loading-overlay');
+  document.getElementById('loading-text').textContent = msg || 'Memproses...';
+  o.classList.remove('hidden'); o.style.display = 'flex';
+}
+
+function hideLoading() {
+  var o = document.getElementById('loading-overlay');
+  o.classList.add('hidden'); o.style.display = 'none';
+}
+
+function showToast(msg, type) {
+  var existing = document.getElementById('toast-notification');
+  if (existing) existing.remove();
+  
+  var colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-primary-600' };
+  var icons = { success: 'fa-circle-check', error: 'fa-circle-exclamation', info: 'fa-circle-info' };
+  
+  var toast = document.createElement('div');
+  toast.id = 'toast-notification';
+  toast.className = 'toast fixed top-4 left-1/2 -translate-x-1/2 z-[200] px-6 py-3 rounded-xl text-white text-sm font-bold shadow-2xl flex items-center gap-2 ' + (colors[type] || colors.info);
+  toast.innerHTML = '<i class="fa-solid ' + (icons[type] || icons.info) + '"></i> ' + msg;
+  document.body.appendChild(toast);
+  
+  setTimeout(function() { toast.classList.add('hide'); setTimeout(function() { toast.remove(); }, 300); }, 3500);
+}
+
+function getSkeleton(type) {
+  if (type === 'dashboard') {
+    return '<div class="animate-pulse space-y-6"><div class="h-8 bg-gray-200 rounded-xl w-48"></div><div class="h-32 bg-gray-200 rounded-2xl"></div><div class="grid grid-cols-2 lg:grid-cols-4 gap-5"><div class="h-32 bg-gray-200 rounded-2xl"></div><div class="h-32 bg-gray-200 rounded-2xl"></div><div class="h-32 bg-gray-200 rounded-2xl"></div><div class="h-32 bg-gray-200 rounded-2xl"></div></div></div>';
+  }
+  return '<div class="animate-pulse space-y-4"><div class="h-8 bg-gray-200 rounded-xl w-56"></div><div class="h-64 bg-gray-200 rounded-2xl"></div></div>';
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getFileIcon(ext) {
+  var e = String(ext).toUpperCase();
+  if (e === 'PDF') return { icon: 'fa-file-pdf', bg: 'bg-red-50', text: 'text-red-500', border: 'border-red-100' };
+  if (e === 'DOC' || e === 'DOCX') return { icon: 'fa-file-word', bg: 'bg-blue-50', text: 'text-blue-500', border: 'border-blue-100' };
+  if (e === 'XLS' || e === 'XLSX') return { icon: 'fa-file-excel', bg: 'bg-green-50', text: 'text-green-500', border: 'border-green-100' };
+  if (e === 'JPG' || e === 'JPEG' || e === 'PNG') return { icon: 'fa-file-image', bg: 'bg-purple-50', text: 'text-purple-500', border: 'border-purple-100' };
+  return { icon: 'fa-file', bg: 'bg-gray-50', text: 'text-gray-500', border: 'border-gray-200' };
+}
+
+// === Drag and Drop Listeners ===
+function setupDragAndDrop() {
+  function applyDrag(zoneId, inputId, textId, defaultText) {
+    var zone = document.getElementById(zoneId);
+    var input = document.getElementById(inputId);
+    var text = document.getElementById(textId);
+    if (!zone || !input) return;
+
+    zone.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      if(zoneId === 'edit-dropzone') {
+        zone.classList.add('border-amber-500', 'bg-amber-100/50');
+      } else {
+        zone.classList.add('border-primary-500', 'bg-primary-50');
+      }
+    });
+
+    zone.addEventListener('dragleave', function(e) {
+      e.preventDefault();
+      zone.classList.remove('border-primary-500', 'bg-primary-50', 'border-amber-500', 'bg-amber-100/50');
+    });
+
+    zone.addEventListener('drop', function(e) {
+      e.preventDefault();
+      zone.classList.remove('border-primary-500', 'bg-primary-50', 'border-amber-500', 'bg-amber-100/50');
+      if (e.dataTransfer.files.length) {
+        input.files = e.dataTransfer.files;
+        text.textContent = 'Terpilih: ' + e.dataTransfer.files[0].name;
+      }
+    });
+
+    input.addEventListener('change', function() {
+      if(input.files.length > 0) text.textContent = 'Terpilih: ' + input.files[0].name;
+      else text.textContent = defaultText;
+    });
+  }
+
+  applyDrag('upload-dropzone', 'upload-file', 'upload-filename-text', 'PDF, DOCX, XLSX, JPG, PNG (Maks. 10MB)');
+  applyDrag('edit-dropzone', 'edit-file', 'edit-filename-text', 'Atau klik untuk memilih file...');
+}
+
+// === INIT ===
+document.addEventListener('DOMContentLoaded', function() {
+  initApp();
+  setupDragAndDrop();
+});
+</script>

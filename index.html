@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIPAMANDAQ - Sistem Manajemen Arsip Dokumen PTI</title>
+    
+    <!-- Google Fonts: Outift & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Tailwind CSS (v3 CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans antialiased overflow-hidden selection:bg-primary-500 selection:text-white">
+
+    <!-- 1. LOGIN VIEW -->
+    <div id="view-login" class="view-section active fixed inset-0 z-50 flex items-center justify-center bg-[#f8fafc] p-4 md:p-10 overflow-y-auto">
+        <!-- Grid Background Pattern -->
+        <div class="absolute inset-x-0 top-0 h-full w-full bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+
+        <div class="w-full max-w-6xl mx-auto flex flex-col lg:flex-row items-center gap-10 lg:gap-20 relative z-10 my-auto py-10">
+            
+            <!-- Left Info Section -->
+            <div class="w-full lg:w-1/2 text-left mb-8 lg:mb-0">
+                <div class="flex items-center mb-10">
+                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white flex items-center justify-center text-xl shadow-lg mr-4">
+                        <i class="fa-solid fa-folder-tree"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-display font-black text-gray-900 tracking-tight leading-none">SIPAMANDAQ</h2>
+                        <p class="text-xs text-gray-500 font-medium mt-1">Sistem Manajemen Arsip Dokumen</p>
+                    </div>
+                </div>
+
+                <h1 class="text-4xl md:text-5xl font-display font-bold text-gray-900 leading-tight mb-4">
+                    Selamat Datang di <br><span class="text-primary-600">SIPAMANDAQ</span>
+                </h1>
+                <p class="text-xl font-bold text-gray-800 mb-6 font-display">Tersentralisasi, Cepat, Aman</p>
+
+                <p class="text-gray-600 mb-6 leading-relaxed bg-white/50 backdrop-blur-sm p-4 rounded-xl border border-gray-100">
+                    Layanan Integrasi untuk pengelolaan Arsip Dokumen Program Studi Pendidikan Teknologi Informasi yang mempermudah proses evaluasi serta tata kelola akreditasi yang tertib administrasi, transparan, dan berkualitas.
+                </p>
+
+                <div class="flex flex-wrap gap-3 text-sm font-bold text-gray-600 mb-6">
+                    <span class="flex items-center bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-200"><i class="fa-solid fa-bolt text-amber-500 mr-2"></i> Akses Cepat</span>
+                    <span class="flex items-center bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-200"><i class="fa-solid fa-shield-halved text-green-500 mr-2"></i> Keamanan Data</span>
+                    <span class="flex items-center bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-200"><i class="fa-solid fa-cloud text-primary-500 mr-2"></i> Cloud Storage</span>
+                </div>
+            </div>
+
+            <!-- Right Login Form Section -->
+            <div class="w-full lg:w-[450px] mx-auto lg:mr-0 lg:ml-auto">
+                <div class="bg-white rounded-[2rem] p-8 shadow-2xl relative border border-gray-100">
+                    <div class="text-center md:text-left mb-6 border-b border-gray-100 pb-5">
+                        <h3 class="text-2xl font-display font-black text-gray-900">Masuk Ke Akun Anda</h3>
+                    </div>
+
+                    <div class="bg-primary-50 border-l-4 border-primary-500 p-4 rounded-r-lg mb-6 flex items-start">
+                        <i class="fa-solid fa-circle-info text-primary-600 mt-0.5 mr-3"></i>
+                        <div>
+                            <p class="text-sm text-primary-800 font-bold mb-1">Akses Sistem Menggunakan RBAC</p>
+                            <p class="text-[11px] text-primary-700 font-medium">Gunakan akun sesuai peran Anda untuk diarahkan ke Dashboard masing-masing profil.</p>
+                        </div>
+                    </div>
+
+                    <form id="loginForm" class="space-y-4" onsubmit="handleLogin(event)">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">NIP / NUPTK / Username</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
+                                    <i class="fa-solid fa-user"></i>
+                                </div>
+                                <input type="text" id="loginUsername" required class="block w-full pl-11 pr-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm font-medium transition-colors bg-gray-50 hover:bg-white focus:bg-white" placeholder="Masukkan ID Anda">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="block text-sm font-bold text-gray-700">Password</label>
+                            </div>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
+                                    <i class="fa-solid fa-lock"></i>
+                                </div>
+                                <input type="password" id="loginPassword" class="block w-full pl-11 pr-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm font-medium transition-colors bg-gray-50 hover:bg-white focus:bg-white" placeholder="Bebas untuk demo">
+                            </div>
+                        </div>
+
+                        <div class="pt-2">
+                            <button type="submit" class="btn-animate w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-[0_4px_14px_0_rgba(59,130,246,0.39)] text-sm font-bold text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors">
+                                Masuk Aplikasi
+                            </button>
+                        </div>
+                        
+                        <!-- EASY DEMO BUTTONS for User -->
+                        <div class="mt-8 pt-5 border-t border-gray-100">
+                            <p class="text-xs font-bold text-gray-400 text-center mb-3">JALAN PINTAS UNTUK DEMO UI:</p>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button type="button" onclick="autoFillAndLogin('admin')" class="btn-animate px-1 py-2 text-[11px] font-bold text-gray-700 bg-gray-100 border border-gray-200 rounded-xl hover:bg-gray-200 hover:text-gray-900 transition-colors">Log Admin</button>
+                                <button type="button" onclick="autoFillAndLogin('dosen')" class="btn-animate px-1 py-2 text-[11px] font-bold text-gray-700 bg-gray-100 border border-gray-200 rounded-xl hover:bg-gray-200 hover:text-gray-900 transition-colors">Log Dosen</button>
+                                <button type="button" onclick="autoFillAndLogin('tendik')" class="btn-animate px-1 py-2 text-[11px] font-bold text-gray-700 bg-gray-100 border border-gray-200 rounded-xl hover:bg-gray-200 hover:text-gray-900 transition-colors">Log Tendik</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. MAIN APP LAYOUT (Hidden initially) -->
+    <div id="layout-app" class="hidden h-screen w-full flex bg-[#f8fafc]">
+        
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-72 bg-white border-r border-gray-200 flex flex-col z-40 transition-all duration-300 transform -translate-x-full md:translate-x-0 fixed md:relative h-full shadow-2xl md:shadow-none">
+            <!-- Logo Section -->
+            <div class="h-[72px] flex items-center px-6 border-b border-gray-100">
+                <i class="fa-solid fa-folder-tree text-primary-600 text-2xl mr-3"></i>
+                <span class="font-display font-black text-xl text-gray-900 tracking-tight">SIPAMANDAQ</span>
+                <button onclick="toggleSidebar()" class="md:hidden ml-auto text-gray-400 hover:text-gray-700 bg-gray-100 rounded-lg p-2">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            
+            <!-- User Profile Briefly -->
+            <div class="px-6 py-5 border-b border-gray-100 bg-gradient-to-b from-gray-50/50 to-white">
+                <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Sesi Aktif</p>
+                <div class="flex items-center gap-3">
+                    <div class="h-10 w-10 rounded-xl bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-lg border border-primary-200">
+                        <span id="userInitial">A</span>
+                    </div>
+                    <div>
+                        <p id="userNameDisplay" class="text-sm font-bold text-gray-900 leading-tight">Admin Prodi</p>
+                        <span id="userRoleDisplay" class="inline-block mt-0.5 px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded capitalize">Koordinator</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation Links -->
+            <nav class="flex-1 overflow-y-auto py-4 px-4 space-y-1">
+                <p class="px-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 mt-4">Penyimpanan Dokumen</p>
+                
+                <a href="#" onclick="navigateTo('prodi')" id="nav-prodi" class="nav-item group flex items-center px-3 py-3 text-sm font-medium rounded-xl text-gray-600 hover:bg-primary-50 hover:text-primary-700 transition-all">
+                    <span class="w-8 h-8 rounded-lg bg-gray-50 group-hover:bg-primary-100 flex items-center justify-center mr-3 transition-colors">
+                        <i class="fa-solid fa-building text-gray-400 group-hover:text-primary-600"></i>
+                    </span>
+                    Dokumen Prodi
+                </a>
+                
+                <a href="#" onclick="navigateTo('dosen')" id="nav-dosen" class="nav-item group flex items-center px-3 py-3 text-sm font-medium rounded-xl text-gray-600 hover:bg-primary-50 hover:text-primary-700 transition-all">
+                    <span class="w-8 h-8 rounded-lg bg-gray-50 group-hover:bg-primary-100 flex items-center justify-center mr-3 transition-colors">
+                        <i class="fa-solid fa-user-tie text-gray-400 group-hover:text-primary-600"></i>
+                    </span>
+                    Dokumen Dosen
+                </a>
+                
+                <a href="#" onclick="navigateTo('tendik')" id="nav-tendik" class="nav-item group flex items-center px-3 py-3 text-sm font-medium rounded-xl text-gray-600 hover:bg-primary-50 hover:text-primary-700 transition-all">
+                    <span class="w-8 h-8 rounded-lg bg-gray-50 group-hover:bg-primary-100 flex items-center justify-center mr-3 transition-colors">
+                        <i class="fa-solid fa-users-gear text-gray-400 group-hover:text-primary-600"></i>
+                    </span>
+                    Dokumen Tendik
+                </a>
+                
+                <a href="#" onclick="navigateTo('mahasiswa')" id="nav-mahasiswa" class="nav-item group flex items-center px-3 py-3 text-sm font-medium rounded-xl text-gray-600 hover:bg-primary-50 hover:text-primary-700 transition-all">
+                    <span class="w-8 h-8 rounded-lg bg-gray-50 group-hover:bg-primary-100 flex items-center justify-center mr-3 transition-colors">
+                        <i class="fa-solid fa-graduation-cap text-gray-400 group-hover:text-primary-600"></i>
+                    </span>
+                    Dokumen Mahasiswa
+                </a>
+
+                <p class="px-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 mt-8">Preferensi User</p>
+                
+                <a href="#" onclick="navigateTo('setting')" id="nav-setting" class="nav-item group flex items-center px-3 py-3 text-sm font-medium rounded-xl text-gray-600 hover:bg-gray-50 hover:text-primary-700 transition-all border border-transparent">
+                    <span class="w-8 h-8 rounded-lg bg-gray-50 group-hover:bg-white border border-transparent group-hover:border-gray-200 flex items-center justify-center mr-3 transition-colors">
+                        <i class="fa-solid fa-gear text-gray-400 group-hover:text-gray-700"></i>
+                    </span>
+                    Pengaturan Akun
+                </a>
+            </nav>
+            
+            <!-- Bottom action -->
+            <div class="p-4 border-t border-gray-100 bg-gray-50/50">
+                <button onclick="handleLogout()" class="btn-animate group flex items-center justify-center w-full px-4 py-3 text-sm font-bold rounded-xl text-red-600 bg-red-50 hover:bg-red-100 transition-all border border-red-100 hidden md:flex">
+                    <i class="fa-solid fa-right-from-bracket mr-2"></i>
+                    Keluar Sistem
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <div class="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+            <!-- Mobile Header/Overlay -->
+            <header class="md:hidden bg-white h-16 border-b border-gray-200 flex items-center justify-between px-4 z-30 flex-shrink-0 shadow-sm">
+                <div class="flex items-center">
+                    <button onclick="toggleSidebar()" class="text-gray-500 hover:text-primary-600 focus:outline-none p-2 bg-gray-50 rounded-lg">
+                        <i class="fa-solid fa-bars-staggered text-lg"></i>
+                    </button>
+                    <span class="ml-3 font-display font-black text-gray-900 text-lg tracking-tight">SIPAMANDAQ</span>
+                </div>
+                <div class="h-9 w-9 rounded-lg bg-primary-100 text-primary-700 flex items-center justify-center font-bold border border-primary-200" onclick="handleLogout()">
+                    <i class="fa-solid fa-power-off text-sm"></i>
+                </div>
+            </header>
+            
+            <!-- Backdrop for mobile sidebar -->
+            <div id="sidebarBackdrop" onclick="toggleSidebar()" class="hidden fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-30 md:hidden transition-opacity"></div>
+
+            <!-- Page Content Scrollable Area -->
+            <main class="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-8 lg:p-10 relative">
+                
+                <!-- TOP HEADER DYNAMIC -->
+                <div class="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
+                    <div>
+                        <h2 id="pageTitle" class="text-3xl font-display font-black text-gray-900 tracking-tight">Dashboard</h2>
+                        <p id="pageDesc" class="text-sm font-medium text-gray-500 mt-1.5 flex items-center">
+                            <i class="fa-solid fa-circle-info mr-1.5 text-gray-400"></i> Kelola arsip dokumen sistem.
+                        </p>
+                    </div>
+                    <div id="headerActions">
+                        <button onclick="openUploadModal()" class="btn-animate inline-flex items-center justify-center px-5 py-2.5 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors shadow-primary-500/30">
+                            <i class="fa-solid fa-cloud-arrow-up mr-2"></i> Upload Arsip Baru
+                        </button>
+                    </div>
+                </div>
+
+                <!-- CONTENT VIEWS CONTAINER -->
+                <div id="views-container">
+                    
+                    <!-- Views will be injected here via app.js buildTableLayout() -->
+                    <!-- Except for Settings View which is static -->
+                    
+                    <div id="view-prodi" class="view-section content-view active"></div>
+                    <div id="view-dosen" class="view-section content-view"></div>
+                    <div id="view-tendik" class="view-section content-view"></div>
+                    <div id="view-mahasiswa" class="view-section content-view"></div>
+
+                    <!-- SETTING VIEW -->
+                    <div id="view-setting" class="view-section content-view">
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                            
+                            <!-- Profile Stats Card -->
+                            <div class="lg:col-span-4 border border-gray-100 bg-white rounded-2xl shadow-sm p-8 text-center relative overflow-hidden">
+                                <div class="absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-primary-500 to-indigo-600"></div>
+                                <div class="relative mt-8 mb-4">
+                                    <div class="h-28 w-28 rounded-full bg-white text-primary-600 flex items-center justify-center font-black text-5xl mx-auto border-4 border-white shadow-xl">
+                                        <span id="settingUserInitial">A</span>
+                                    </div>
+                                </div>
+                                <h3 class="text-xl font-display font-extrabold text-gray-900" id="settingName">Nama Admin</h3>
+                                <div class="inline-block mt-2 mb-6 px-3 py-1 bg-primary-50 text-primary-700 text-xs font-bold rounded-lg uppercase tracking-wider border border-primary-100" id="settingRole">Level Role</div>
+                                
+                                <div class="pt-6 border-t border-gray-100 grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p class="text-2xl font-black text-gray-900">12</p>
+                                        <p class="text-[10px] font-bold text-gray-400 uppercase">Dokumen</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-2xl font-black text-gray-900">1h</p>
+                                        <p class="text-[10px] font-bold text-gray-400 uppercase">Terkahir aktif</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Security / Data Form -->
+                            <div class="lg:col-span-8 border border-gray-100 bg-white rounded-2xl shadow-sm">
+                                <div class="p-6 md:p-8 border-b border-gray-100 flex items-center">
+                                    <div class="w-10 h-10 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center mr-4">
+                                        <i class="fa-solid fa-shield-halved text-lg"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-lg font-display font-bold text-gray-900">Kredensial Keamanan</h3>
+                                        <p class="text-sm font-medium text-gray-500">Perbarui identitas login dan kata sandi Anda</p>
+                                    </div>
+                                </div>
+                                <div class="p-6 md:p-8 space-y-6">
+                                    <div>
+                                        <label class="block text-sm font-bold text-gray-700 mb-2">ID Login (Username / NIP / NUPTK)</label>
+                                        <div class="relative">
+                                            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-id-card"></i></div>
+                                            <input type="text" id="settingInputUsername" class="block w-full pl-11 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm font-medium bg-gray-50">
+                                        </div>
+                                    </div>
+                                    
+                                    <hr class="border-gray-100">
+                                    
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                                        <div>
+                                            <label class="block text-sm font-bold text-gray-700 mb-2">Password Baru <span class="text-gray-400 font-normal text-xs">(Opsional)</span></label>
+                                            <div class="relative">
+                                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-key"></i></div>
+                                                <input type="password" class="block w-full pl-11 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm font-medium bg-gray-50" placeholder="Biarkan kosong jika tak diubah">
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-bold text-gray-700 mb-2">Masukan ulang Password</label>
+                                            <div class="relative">
+                                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400"><i class="fa-solid fa-check-double"></i></div>
+                                                <input type="password" class="block w-full pl-11 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm font-medium bg-gray-50" placeholder="Password yang sama">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="pt-4 flex justify-end">
+                                        <button class="btn-animate inline-flex items-center px-6 py-3 border border-transparent rounded-xl shadow-md text-sm font-bold text-white bg-gray-900 hover:bg-gray-800 transition-colors">
+                                            <i class="fa-solid fa-floppy-disk mr-2"></i> Simpan Perubahan Akun
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </main>
+        </div>
+    </div>
+
+    <!-- 3. MODALS -->
+    
+    <!-- Upload/Edit Modal -->
+    <div id="modal-upload" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+        <!-- Backdrop -->
+        <div class="absolute inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity" onclick="closeModal('modal-upload')"></div>
+        
+        <!-- Modal Panel -->
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl transform transition-all overflow-hidden flex flex-col max-h-[90vh] relative z-10 m-4 border border-gray-100">
+            <div class="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/80">
+                <div class="flex items-center">
+                    <div class="w-10 h-10 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center mr-3">
+                        <i class="fa-solid fa-cloud-arrow-up text-lg"></i>
+                    </div>
+                    <h3 class="text-xl font-black text-gray-900 font-display" id="uploadModalTitle">Upload Dokumen</h3>
+                </div>
+                <button onclick="closeModal('modal-upload')" class="text-gray-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 md:p-8 overflow-y-auto">
+                <form class="space-y-6 text-sm" id="uploadForm" onsubmit="event.preventDefault(); closeModal('modal-upload');">
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">Nama Dokumen / Judul <span class="text-red-500">*</span></label>
+                        <input type="text" required class="block w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-gray-50 font-medium" placeholder="Misal: SK Mengajar Ganjil PTI 2024">
+                    </div>
+                    
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">Kategori <span class="text-red-500">*</span></label>
+                        <div class="relative">
+                            <select id="modalKategori" required class="block w-full pl-4 pr-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-gray-50 font-medium appearance-none">
+                                <option value="">Pilih Kategori Terlebih Dahulu...</option>
+                            </select>
+                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-500">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block font-bold text-gray-700 mb-2">File Arsip Dokumen <span class="text-red-500">*</span></label>
+                        <!-- Custom File Drop Area -->
+                        <div class="mt-1 flex justify-center px-6 py-8 border-2 border-primary-200 border-dashed rounded-2xl hover:border-primary-500 hover:bg-primary-50 transition-colors bg-gray-50 group cursor-pointer">
+                            <div class="space-y-2 text-center">
+                                <i class="fa-solid fa-file-arrow-up text-4xl text-gray-300 group-hover:text-primary-500 mb-3 block transition-colors"></i>
+                                <div class="flex text-sm text-gray-600 justify-center">
+                                    <label for="file-upload" class="relative cursor-pointer rounded-md font-bold text-primary-600 hover:text-primary-800 focus-within:outline-none">
+                                        <span>Klik untuk Jelajahi File</span>
+                                        <input id="file-upload" name="file-upload" type="file" class="sr-only">
+                                    </label>
+                                    <p class="pl-1 text-gray-500 font-medium">atau tarik dan lepas</p>
+                                </div>
+                                <p class="text-xs text-gray-400 font-medium">Mendukung PDF, DOCX, XLSX (Maks. 10MB)</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="pt-4 mt-8 flex justify-end gap-3 border-t border-gray-100 pt-6">
+                        <button type="button" onclick="closeModal('modal-upload')" class="px-5 py-2.5 border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-100 font-bold transition-colors">Batal</button>
+                        <button type="submit" class="btn-animate px-6 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-bold flex items-center shadow-md shadow-primary-500/30">
+                            <i class="fa-solid fa-cloud-arrow-up mr-2"></i> Eksekusi Upload
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts Location -->
+    <script src="assets/js/app.js?v=4"></script>
+</body>
+</html>
